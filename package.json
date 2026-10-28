@@ -1,0 +1,12 @@
+{
+  "name": "the-clockwrights-bench",
+  "version": "1.1.0",
+  "private": true,
+  "description": "A cooperative repair game for 2-6 players with a torn manual",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
