@@ -2,6 +2,8 @@
 
 <p align="center"><img src="clockwright_cover.jpg" alt="The Clockwright's Bench poster: a cracked village clock with its pendulum, the Gear Train, Spring Tension and Chime Rack modules, torn manual pages and a STRIKE stamp" width="460"></p>
 
+**Play now:** [the-clockwrights-bench.onrender.com](https://the-clockwrights-bench.onrender.com/). Enter a name and tap **Practice alone** to play with two bot apprentices.
+
 A cooperative repair game for 2–6 apprentices. Three clocks, one torn manual. Each module has one operator, and the page that fixes it is held by someone else, so the team has to talk, read pages out and trust each other before the pendulum stops.
 
 ## Run locally

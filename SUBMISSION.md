@@ -55,7 +55,7 @@ Details:
 ## d. Project link
 
 ```
-(add the live Render URL here after deploying)
+https://the-clockwrights-bench.onrender.com/
 ```
 
 Source: https://github.com/telusfreelance47-svg/the-clockwrights-Bench
@@ -73,7 +73,7 @@ Source: https://github.com/telusfreelance47-svg/the-clockwrights-Bench
 ## Before you submit
 
 - [x] Pushed to GitHub (Oct 28).
-- [ ] Deploy on Render (Build `npm install`, Start `npm start`, Health Check Path `/healthz`) and paste the URL above.
+- [x] Deployed on Render (Oct 28). `/healthz` returns ok and a practice workshop opens over wss.
 - [ ] Add an UptimeRobot monitor on the `/healthz` URL so the free instance doesn't sleep.
 - [ ] Playtest the linked gears on clocks 2 and 3 with at least one other person.
 - [ ] Play one full practice game on the live link, on a phone and on a laptop.
