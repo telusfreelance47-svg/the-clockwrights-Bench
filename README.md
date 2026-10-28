@@ -1,5 +1,7 @@
 # The Clockwright's Bench
 
+<p align="center"><img src="clockwright_cover.jpg" alt="The Clockwright's Bench poster: a cracked village clock with its pendulum, the Gear Train, Spring Tension and Chime Rack modules, torn manual pages and a STRIKE stamp" width="460"></p>
+
 A cooperative repair game for 2–6 apprentices. Three clocks, one torn manual. Each module has one operator, and the page that fixes it is held by someone else, so the team has to talk, read pages out and trust each other before the pendulum stops.
 
 ## Run locally
@@ -34,5 +36,7 @@ Open `http://localhost:3002`. Others join with the four-letter workshop code, or
 - Awards: Steady Hands, Best Reader, Quick Eyes; keyboard shortcuts 1–6 / A–F
 - `/healthz` returns `ok` for uptime monitors
 - Gamified layer (`fx.js`): guild ranks from Sweeper of Shavings to Timekeeper Royal, XP and eight guild medals saved on the device, named clock bumpers, module lamps, a clean-repair streak, gear bursts, stars that land one at a time and a shareable result card
+
+Submission details (title, description, cover, link) are in [SUBMISSION.md](SUBMISSION.md).
 
 Room state is held in memory and resets when the server restarts.
