@@ -26,6 +26,10 @@ const MODULE_IDS = Object.keys(MODULES);
 const SYMPTOMS = Object.fromEntries(MODULE_IDS.flatMap(m => MODULES[m].symptoms.map(s => [s.key, { ...s, module: m }])));
 const CHIPS = { have: 'I have it.', hold: 'Hold on.', try: 'Try it!', notmine: 'Not mine.', done: 'Done. Next!' };
 const BOT_NAMES = ['Apprentice Ada', 'Apprentice Bram'];
+// Linked gears: from clock 2, repairing a driving module turns the module it drives and flips that plate.
+const LINKS = [null, {}, { gear: 'spring' }, { gear: 'spring', spring: 'chime' }];
+const BOT_CHAT_GAP_MS = 4000 * SCALE;
+const pick = list => list[crypto.randomInt(list.length)];
 
 const rooms = new Map();
 
@@ -175,6 +179,73 @@ function drawSymptom(room, moduleId, avoidKey) {
   const options = MODULES[moduleId].symptoms.filter(s => s.key !== avoidKey);
   return options[crypto.randomInt(options.length)];
 }
+// Every new plate resets what the team knows about it and gives the bots a moment before they speak up.
+function newPlate(room, id, now = Date.now()) {
+  const m = room.modules[id];
+  m.symptom = drawSymptom(room, id, m.symptom?.key);
+  // A page already shared this clock (for example, before a linked gear brought the plate back) still counts.
+  m.shownAt = now; m.infoAt = room.known?.has(m.symptom.key) ? now : null; m.needAt = null;
+  m.chatAt = now + (2500 + crypto.randomInt(2500)) * SCALE;
+}
+// A page reaching the bench (a read-out or a bot's answer) marks the plate as known, for the debrief.
+function pageShared(room, key, now) {
+  room.known?.add(key);
+  for (const id of MODULE_IDS) {
+    const m = room.modules?.[id];
+    if (!m || m.done || m.symptom.key !== key || m.infoAt) continue;
+    m.infoAt = now;
+    if (m.needAt) room.stats.answers.push(now - m.needAt);
+  }
+}
+const freshStats = () => ({ presses: 0, informed: 0, guesses: 0, lucky: 0, asks: 0, answers: [], readouts: 0, repairTimes: [], linkFlips: 0 });
+const mean = list => list.length ? list.reduce((a, b) => a + b, 0) / list.length : null;
+function debrief(room) {
+  const s = room.stats, avg = ms => ms == null ? null : Math.round(ms / 100) / 10;
+  return { mode: room.mode, practice: room.practice, presses: s.presses, informed: s.informed, guesses: s.guesses, lucky: s.lucky, asks: s.asks,
+    readouts: s.readouts, avgAnswer: avg(mean(s.answers)), avgRepair: avg(mean(s.repairTimes)), linkFlips: s.linkFlips };
+}
+
+// ---------- Bot apprentices talk at the bench (practice) ----------
+function botSay(room, bot, text, now = Date.now()) {
+  addFeed(room, { kind: 'bot', from: bot.name, text });
+  room.lastBotChat = now;
+}
+function botBriefing(room) {
+  const bots = roster(room).filter(p => p.isBot);
+  for (const bot of bots) {
+    const counts = MODULE_IDS.map(id => [MODULES[id].title, bot.pages.filter(l => SYMPTOMS[l.key].module === id).length]).filter(([, n]) => n);
+    botSay(room, bot, `I've got ${new Intl.ListFormat('en').format(counts.map(([t, n]) => `${n} ${t}`))} page${counts.length === 1 && counts[0][1] === 1 ? '' : 's'}.`);
+  }
+  const links = Object.entries(LINKS[room.clock]);
+  if (bots.length && links.length) {
+    const chain = links.length > 1 ? 'the Chime Rack, then the Spring, then the Gear Train' : 'the Spring before the Gear Train';
+    botSay(room, bots[room.clock % bots.length], `Mind the linkage, master: ${links.map(([a, b]) => `the ${MODULES[a].title} turns the ${MODULES[b].title}`).join(', and ')}. Fix ${chain}.`);
+  }
+}
+function botReact(room, kind, detail) {
+  if (!room.practice) return;
+  const bots = roster(room).filter(p => p.isBot);
+  if (!bots.length) return;
+  const now = Date.now();
+  if (kind === 'strike') botSay(room, pick(bots), pick(['Steady, master. A question costs 3 seconds; a strike costs 30 points.', 'Ouch. Ask us before you press.', 'She felt that one. Check the page first.']), now);
+  else if (kind === 'turned') botSay(room, pick(bots), `The ${MODULES[detail.from].title} turned the ${MODULES[detail.to].title}. Fresh plate there.`, now);
+  else if (kind === 'done' && now - (room.lastBotChat || 0) > BOT_CHAT_GAP_MS) botSay(room, pick(bots), pick([`${MODULES[detail].title} is running!`, `Lovely. The ${MODULES[detail].title} ticks.`, 'That one sings.']), now);
+}
+// A bot speaks up when a new plate matches one of its pages, so the player knows whom to ask.
+function botChatter(room, now) {
+  if (!room.practice || room.phase !== 'repair' || now - (room.lastBotChat || 0) < BOT_CHAT_GAP_MS) return false;
+  for (const id of MODULE_IDS) {
+    const m = room.modules[id];
+    if (m.done || !m.chatAt || now < m.chatAt) continue;
+    m.chatAt = null;
+    if (m.infoAt || room.asks.some(a => a.key === m.symptom.key)) continue;
+    const holder = roster(room).find(p => p.pages.some(l => l.key === m.symptom.key));
+    if (!holder?.isBot) continue;
+    botSay(room, holder, pick([`That ${m.symptom.label} on the ${MODULES[id].title} looks like one of mine. Ask me.`, `${m.symptom.label}? I think I have that page. Ask me.`, `I've got something for the ${MODULES[id].title}. Ask me.`]), now);
+    return true;
+  }
+  return false;
+}
 
 // ---------- State sent to each client: only the viewer's own pages, never the rule map ----------
 function viewFor(room, viewer) {
@@ -186,7 +257,7 @@ function viewFor(room, viewer) {
     paused: room.paused ? { since: room.paused.since, until: room.paused.since + PAUSE_LIMIT_MS } : null,
     players: roster(room).map(p => ({ id: p.id, name: p.name, isBot: p.isBot, connected: p.connected || p.isBot, spectator: p.spectator,
       credits: p.credits, strikesCaused: p.strikesCaused, repairs: p.repairs, pageCount: p.pages.length })),
-    operators: live ? room.operators : {},
+    operators: live ? room.operators : {}, links: live ? LINKS[room.clock] : {},
     modules: live && room.modules ? Object.fromEntries(MODULE_IDS.map(id => {
       const m = room.modules[id];
       return [id, { title: MODULES[id].title, verb: MODULES[id].verb, actions: MODULES[id].actions, symptom: m.done ? null : m.symptom, remaining: m.remaining, total: m.total, done: m.done, flip: m.flip }];
@@ -232,6 +303,8 @@ function startGame(room) {
   room.seed = crypto.randomInt(2 ** 31);
   room.ruleMap = buildRuleMap(rng(room.seed));
   room.clock = 0; room.teamScore = 0; room.results = []; room.feed = [];
+  // The manual is the same all game, so a page shared on clock 1 is still known on clock 3.
+  room.known = new Set();
   return brief(room);
 }
 function brief(room) {
@@ -244,19 +317,22 @@ function brief(room) {
     for (const p of onlineHumans(room)) send(p.ws, 'error', { message: 'The manual could not be dealt fairly. Try again.' });
     return false;
   }
-  room.strikes = 0; room.repairPoints = 0; room.asks = [];
-  room.modules = Object.fromEntries(MODULE_IDS.map(id => [id, { symptom: drawSymptom(room, id), shownAt: null, remaining: room.clock, total: room.clock, done: false, flip: 0 }]));
+  room.strikes = 0; room.repairPoints = 0; room.asks = []; room.stats = freshStats();
+  room.modules = Object.fromEntries(MODULE_IDS.map(id => [id, { symptom: null, remaining: room.clock, total: room.clock, done: false, flip: 0 }]));
+  for (const id of MODULE_IDS) newPlate(room, id);
   for (const p of roster(room)) p.newPagesAt = null;
   room.phase = 'briefing';
   setTimer(room, BRIEF_MS);
   addFeed(room, { kind: 'system', text: `Clock ${room.clock} is on the bench. Read your pages.` });
+  if (room.practice) botBriefing(room);
   broadcast(room);
   return true;
 }
 function beginRepair(room) {
   room.phase = 'repair';
   setTimer(room, CLOCK_MS[room.clock - 1]);
-  for (const m of Object.values(room.modules)) m.shownAt = Date.now();
+  const now = Date.now();
+  for (const m of Object.values(room.modules)) { m.shownAt = now; m.chatAt = now + (2500 + crypto.randomInt(2500)) * SCALE; }
   broadcast(room);
 }
 function finishClock(room, outcome) {
@@ -267,6 +343,7 @@ function finishClock(room, outcome) {
     timeBonus: complete ? secondsLeft * 2 : 0, completion: complete ? 100 : 0, strikePenalty: complete ? room.strikes * 30 : 0,
     fixed: MODULE_IDS.reduce((n, id) => n + (room.modules[id].total - room.modules[id].remaining), 0), needed: room.clock * 3, secondsLeft,
     credits: crew(room).map(p => ({ id: p.id, name: p.name, isBot: p.isBot, credits: p.clockCredits || 0 })).sort((a, b) => b.credits - a.credits),
+    debrief: debrief(room),
   };
   result.total = result.repairs + result.timeBonus + result.completion - result.strikePenalty;
   result.stars = complete ? (room.strikes === 0 ? 3 : 2) : result.fixed * 2 >= result.needed ? 1 : 0;
@@ -305,27 +382,40 @@ function press(room, player, msg) {
   player.presses.push(now);
   const correct = room.ruleMap[m.symptom.key] === msg.action;
   const label = m.symptom.label;
+  // Debrief: a press is informed when its page reached the bench or the presser holds it.
+  const informed = !!m.infoAt || player.pages.some(l => l.key === m.symptom.key);
+  room.stats.presses++;
+  if (informed) room.stats.informed++; else { room.stats.guesses++; if (correct) room.stats.lucky++; }
   m.flip++;
   if (correct) {
     room.repairPoints += 40;
     player.repairs++;
     const took = now - m.shownAt;
+    room.stats.repairTimes.push(took);
     if (player.fastest == null || took < player.fastest) player.fastest = took;
     const owner = roster(room).find(p => p.pages.some(l => l.key === m.symptom.key));
     if (owner) { owner.credits++; owner.clockCredits = (owner.clockCredits || 0) + 1; }
     m.remaining--;
     addFeed(room, { kind: 'system', tone: 'good', text: `${MODULES[id].title}: ${label} → ${MODULES[id].verb} ${msg.action}. Clean work${owner && owner.id !== player.id ? `, thanks to ${owner.name}'s page` : ''}.` });
-    if (m.remaining <= 0) m.done = true;
-    else { m.symptom = drawSymptom(room, id, m.symptom.key); m.shownAt = now; }
-    send(player.ws, 'result', { correct: true, module: id });
+    if (m.remaining <= 0) { m.done = true; botReact(room, 'done', id); }
+    else newPlate(room, id, now);
+    // The repaired module turns the one it drives: that plate flips (no strike).
+    const driven = LINKS[room.clock][id], d = driven && room.modules[driven];
+    if (d && !d.done) {
+      newPlate(room, driven, now); d.flip++; room.stats.linkFlips++;
+      addFeed(room, { kind: 'system', tone: 'turn', text: `The ${MODULES[id].title} turned the ${MODULES[driven].title}: new plate, ${d.symptom.label}.` });
+      botReact(room, 'turned', { from: id, to: driven });
+    }
+    send(player.ws, 'result', { correct: true, module: id, turned: d && !d.done ? driven : null });
     if (MODULE_IDS.every(k => room.modules[k].done)) return finishClock(room, 'running');
   } else {
     room.strikes++;
     player.strikesCaused++;
-    m.symptom = drawSymptom(room, id, m.symptom.key); m.shownAt = now;
+    newPlate(room, id, now);
     addFeed(room, { kind: 'system', tone: 'bad', text: `STRIKE ${room.strikes}: ${label} is not ${MODULES[id].verb} ${msg.action}. New plate drawn.` });
     send(player.ws, 'result', { correct: false, module: id });
     if (room.strikes >= MAX_STRIKES) return finishClock(room, 'jammed');
+    botReact(room, 'strike');
   }
   broadcast(room);
 }
@@ -336,6 +426,7 @@ function askBot(room, player, msg) {
   // PRD 7: each ask costs 3 seconds of the clock and answers after a 3-second delay.
   room.endsAt -= ASK_COST_MS;
   room.asks.push({ botId: bot.id, module: msg.module, key: m.symptom.key, at: Date.now() + ASK_DELAY_MS });
+  room.stats.asks++; m.needAt ??= Date.now();
   addFeed(room, { kind: 'bot', from: player.name, text: `asks ${bot.name}: who has ${MODULES[msg.module].title} ${m.symptom.label}? (−3s)` });
   broadcast(room);
 }
@@ -347,6 +438,7 @@ function answerAsks(room, now) {
     const bot = room.players.get(a.botId);
     const line = bot?.pages.find(l => l.key === a.key);
     addFeed(room, { kind: 'bot', from: bot?.name || 'Apprentice', text: line ? `Got it! ${lineText(line)}.` : `Not mine, master. ${SYMPTOMS[a.key].label} isn't in my pages.` });
+    if (line) pageShared(room, a.key, now);
   }
   return true;
 }
@@ -410,12 +502,14 @@ function handle(ws, msg) {
       const line = player.pages.find(l => l.id === msg.lineId);
       if (!line || !feedOk()) return;
       addFeed(room, { kind: 'readout', from: player.name, fromId: player.id, text: lineText(line) });
+      if (room.stats) { room.stats.readouts++; pageShared(room, line.key, now); }
       return broadcast(room);
     }
     case 'need': {
       const m = room.modules?.[msg.module];
       if (room.mode !== 'silent' || room.phase !== 'repair' || !m || m.done || !feedOk()) return;
       addFeed(room, { kind: 'need', from: player.name, fromId: player.id, text: `Who has ${MODULES[msg.module].title}: ${m.symptom.label}?` });
+      room.stats.asks++; m.needAt ??= now;
       return broadcast(room);
     }
     case 'chip':
@@ -515,6 +609,7 @@ setInterval(() => {
       continue;
     }
     if (answerAsks(room, now)) changed = true;
+    if (botChatter(room, now)) changed = true;
     if (room.endsAt && now >= room.endsAt) {
       if (room.phase === 'briefing') beginRepair(room);
       else if (room.phase === 'repair') finishClock(room, 'time');

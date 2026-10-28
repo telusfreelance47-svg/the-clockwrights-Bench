@@ -21,6 +21,9 @@ Open `http://localhost:3002`. Others join with the four-letter workshop code, or
 - Scoring: +40 per repair (credited to the page holder), and on completion +100, +2 per second left, −30 per strike. Clocks earn up to three stars.
 - **Silent Bench** mode uses read-outs, "Who has this?" and quick chips. **Talk It Out** hides the notes for groups on a call.
 - Practice: you operate every module. Asking a bot costs 3 seconds and answers after 3 seconds.
+- **Linked gears** (from clock 2): repairing the Gear Train turns the Spring Tension, and on clock 3 the Spring turns the Chime Rack. The driven module's plate flips (no strike), so any answer found for it is wasted. The team has to agree on a repair order.
+- **Team debrief** after every clock: questions asked, average answer time, how many presses were backed by a page versus guessed, plates turned by linked gears, and a Foreman's tip for the next clock. The final screen sums it up.
+- **Bot apprentices talk** in practice: they say which pages they hold at each briefing, warn about the linkage, speak up when a plate matches one of their pages, and react to strikes and repairs.
 
 ## Included
 

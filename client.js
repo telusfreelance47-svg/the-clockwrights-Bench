@@ -172,6 +172,7 @@
         sound.play('good'); buzz(25); flash(card, 'good');
         FX.float(card?.querySelector('.plate'), '+40', '');
         if (plateSeen[m.module] && Date.now() - plateSeen[m.module] <= 3000) FX.unlock('speed');
+        if (m.turned) { const driven = app.querySelector(`[data-module="${m.turned}"]`); flash(driven, 'turn'); FX.float(driven?.querySelector('.plate'), 'TURNED', ''); }
       } else { sound.play('strike'); buzz([90, 50, 90]); flash(card, 'bad'); FX.shake(app.querySelector('.bench'), 1.6); FX.float(card?.querySelector('.plate'), 'STRIKE', 'fx-bad'); }
     }
     if (m.type === 'stale' || m.type === 'reject') { toast(m.message, 'bad'); sound.play('reject'); }
@@ -181,7 +182,7 @@
       if (!state) showError(m.message); else toast(m.message, 'bad');
     }
   }
-  function flash(el, kind) { if (!el) return; el.classList.remove('flash-good', 'flash-bad'); void el.offsetWidth; el.classList.add(`flash-${kind}`); }
+  function flash(el, kind) { if (!el) return; el.classList.remove('flash-good', 'flash-bad', 'flash-turn'); void el.offsetWidth; el.classList.add(`flash-${kind}`); }
 
   // ---------- Landing ----------
   const nameInput = $('#name'), codeInput = $('#code');
@@ -329,9 +330,11 @@
           <section class="brief">
             <div class="brief-top"><div><div class="eyebrow">CLOCK ${state.clock} OF 3 · BRIEFING</div><h2>Read your pages</h2><p class="lede">${state.clock} repair${state.clock > 1 ? 's' : ''} per module this time. The bench opens when the bell rings.</p></div><div data-r="timer"></div></div>
             <div data-r="role"></div>
+            <div data-r="links"></div>
             <div class="paper ledger-panel"><div class="panel-head"><span>YOUR LEDGER PAGES</span><span class="muted">only you see these</span></div><div data-r="pages"></div></div>
+            ${state.practice ? '<div class="paper feed-panel brief-feed"><div class="panel-head"><span>BENCH NOTES</span><span class="muted">your apprentices</span></div><div class="feed" data-r="feed"></div></div>' : ''}
           </section>`,
-        regions: { timer: pendulum(), role: roleHtml(), pages: pagesHtml() },
+        regions: { timer: pendulum(), role: roleHtml(), links: linksHtml(), pages: pagesHtml(), feed: feedHtml() },
       };
     },
     repair() {
@@ -366,6 +369,7 @@
   function coach() {
     const p = state.phase, host = isHost(), mine = MODULE_ORDER.filter(id => state.operators?.[id] === myId());
     if (p === 'lobby') return host ? ['Press OPEN THE SHOP when 2 or more apprentices are here.', 'Silent Bench: you talk only through buttons in the app. Talk It Out: you\u2019re on a call or in one room and speak aloud.'] : ['Wait for the master to open the shop.', 'You\u2019ll each get a few pages of the repair manual.'];
+    if (p === 'briefing' && linkPairs().length) return ['Plan your repair order: the gears are linked.', `${linkPairs().map(([a, b]) => `Fixing the ${MOD_NAMES[a]} flips the ${MOD_NAMES[b]}\u2019s plate`).join('; ')}. Repair the driven module first so nobody\u2019s answer goes to waste.`];
     if (p === 'briefing') return ['Look at your pages: each one is an answer.', 'A line like \u201cGreen 3 \u2192 Remove Gear 4\u201d means: when the Gear Train shows GREEN 3, press button 4. Nobody has every page.'];
     if (p === 'repair') {
       if (player(myId())?.spectator) return ['You\u2019re watching this clock.', 'You\u2019ll get pages at the next clock.'];
@@ -446,6 +450,20 @@
       <div class="bb-streak">${cleanStreak() >= 2 ? `<span class="streak ${cleanStreak() >= 4 ? 'hot' : ''}">CLEAN <b>×${cleanStreak()}</b></span>` : '<span class="streak idle">CLEAN ×0</span>'}</div>
       ${pendulum()}`;
   }
+  // Linked gears (clock 2 onward): which module turns which.
+  function linkPairs() { return Object.entries(state.links || {}); }
+  function linksHtml() {
+    const pairs = linkPairs();
+    if (!pairs.length) return '';
+    const chain = pairs.length > 1 ? 'Chime Rack first, then Spring Tension, then the Gear Train' : 'Spring Tension before the Gear Train';
+    return `<div class="link-card"><div class="link-gears" aria-hidden="true">${MODULE_ORDER.filter(id => pairs.some(([a, b]) => a === id || b === id)).map(id => `<span>${MOD_NAMES[id]}</span>`).join('<i>⚙→</i>')}</div>
+      <div><div class="eyebrow">LINKED GEARS</div><p>${pairs.map(([a, b]) => `Repairing the <b>${MOD_NAMES[a]}</b> turns the <b>${MOD_NAMES[b]}</b> and flips its plate.`).join(' ')} No strike, but any answer found for the old plate is wasted. Best order: <b>${chain}</b>.</p></div></div>`;
+  }
+  function linkNote(id) {
+    const pairs = linkPairs(), drives = pairs.find(([a]) => a === id), driven = pairs.find(([, b]) => b === id);
+    const parts = [drives && !state.modules[drives[1]]?.done ? `⚙ Turns ${MOD_NAMES[drives[1]]}` : '', driven && !state.modules[driven[0]]?.done ? `⚙ Turned by ${MOD_NAMES[driven[0]]}` : ''].filter(Boolean);
+    return parts.length ? `<div class="link-note">${parts.join(' · ')}</div>` : '';
+  }
   function moduleHtml(id) {
     const m = state.modules[id], op = state.operators[id], mine = op === myId();
     const pips = Array.from({ length: m.total }, (_, i) => `<i class="${i < m.total - m.remaining ? 'on' : ''}"></i>`).join('');
@@ -459,7 +477,7 @@
         <div class="plate-text"><small>SYMPTOM PLATE</small><b>${plateLabel(id, s.parts)}</b></div>
       </div>
       <div class="op-line ${mine ? 'mine' : ''}">${mine ? '✋ YOUR HANDS · press the fix' : `Hands: <b>${esc(nameOf(op))}</b>`}</div>
-      ${coachLine(id, s, mine)}
+      ${linkNote(id)}${coachLine(id, s, mine)}
       <div class="actions" role="group" aria-label="${m.verb}">${m.actions.map(a => `<button class="act ${hintAction(id, s, mine) === a ? 'hint' : ''}" data-action="press" data-module="${id}" data-act="${a}" data-symptom="${s.key}" ${mine && state.phase === 'repair' && !state.paused ? '' : 'disabled'} aria-label="${m.verb} ${a}"><small>${m.verb.split(' ')[0]}</small>${a}</button>`).join('')}</div>
       <div class="mod-foot">
         ${state.mode === 'silent' && !state.practice ? `<button class="need" data-action="need" data-module="${id}">WHO HAS THIS?</button>` : ''}
@@ -506,8 +524,36 @@
         <tr class="total"><th>Clock total</th><td data-count="${r.total}">${r.total}</td></tr>
       </table>
       <p class="credits">${credits.length ? `Pages used: ${credits.map(c => `<b>${esc(c.name)}</b> ${c.credits}`).join(' · ')}` : 'No pages were used on this clock.'}</p>
+      ${debriefHtml(r)}
       ${live ? (isHost() ? `<button class="btn brass full" data-action="next">NEXT CLOCK →</button><p class="note center">The next clock comes to the bench on its own in <span data-secs>--</span>s.</p>` : '<p class="note center">The master brings the next clock shortly (<span data-secs>--</span>s).</p>') : ''}
     </div>`;
+  }
+  // Team debrief: how the bench communicated, with one tip for the next clock.
+  function talkStats(d) {
+    const tracked = d.mode === 'silent' || d.practice;
+    const rows = [
+      ['Questions asked', d.asks, state.practice ? 'asks to Ada and Bram' : '\u201cWho has this?\u201d'],
+      tracked && d.avgAnswer != null ? ['Average answer', `${d.avgAnswer}s`, 'from question to page'] : null,
+      tracked && !d.practice ? ['Pages read out', d.readouts, 'shared lines'] : null,
+      tracked && d.presses ? ['Presses backed by a page', `${d.informed} of ${d.presses}`, `${Math.round(d.informed / d.presses * 100)}%`] : null,
+      tracked && d.guesses ? ['Guesses', d.guesses, d.lucky ? `${d.lucky} got lucky` : 'none paid off'] : null,
+      d.avgRepair != null ? ['Average repair', `${d.avgRepair}s`, 'plate to fix'] : null,
+      d.linkFlips ? ['Plates turned by linked gears', d.linkFlips, 'answers wasted'] : null,
+    ].filter(Boolean);
+    return rows.map(([k, v, note]) => `<tr><th>${k}<small>${note}</small></th><td>${v}</td></tr>`).join('');
+  }
+  function debriefTip(d, r) {
+    const tracked = d.mode === 'silent' || d.practice;
+    if (tracked && d.guesses && r.strikes) return `${d.guesses} press${d.guesses === 1 ? '' : 'es'} ${d.guesses === 1 ? 'was a guess' : 'were guesses'}. Ask first: a ${state.practice ? '3-second' : 'quick'} question beats a 30-point strike.`;
+    if (d.linkFlips) return `The linked gears flipped ${plural(d.linkFlips, 'plate')}. Repair the driven module first, so no answer goes to waste.`;
+    if (tracked && d.avgAnswer != null && d.avgAnswer > 8) return `Answers took ${d.avgAnswer}s on average. ${state.practice ? 'Watch the notes: your apprentices say when a plate is theirs.' : 'Readers: watch the plates and call out before you\u2019re asked.'}`;
+    if (!tracked && r.strikes) return 'Talk It Out: the operator reads the plate aloud, the page holder answers, and the operator repeats it back before pressing.';
+    if (tracked && d.presses && d.informed === d.presses && !r.strikes) return 'Every press was backed by a page. That is how a real bench works.';
+    return r.complete ? 'Good work. The next clock is busier, so split the talking: one voice per module.' : 'Out of time. Share pages during the briefing, before the bell rings.';
+  }
+  function debriefHtml(r) {
+    const d = r.debrief; if (!d) return '';
+    return `<div class="debrief"><div class="eyebrow">HOW THE BENCH TALKED</div><table class="breakdown talk">${talkStats(d)}</table><p class="tip"><b>Foreman's tip:</b> ${esc(debriefTip(d, r))}</p></div>`;
   }
   function finalHtml() {
     const a = state.awards || {};
@@ -518,6 +564,8 @@
       <div class="final-score"><span data-count="${state.teamScore}">${state.teamScore}</span><small>TEAM POINTS · ${a.stars || 0} OF 9 STARS</small></div>
       <table class="breakdown clocks"><tr><th>Clock</th><th>Outcome</th><th>Stars</th><th>Points</th></tr>
         ${state.results.map(r => `<tr><td>${r.clock}</td><td>${r.complete ? 'Running' : r.outcome === 'jammed' ? 'Seized' : 'Out of time'}</td><td>${stars(r.stars)}</td><td>${r.total}</td></tr>`).join('')}</table>
+      ${(() => { const ds = state.results.map(r => r.debrief).filter(Boolean), sum = k => ds.reduce((n, d) => n + (d[k] || 0), 0), presses = sum('presses');
+        return ds.length ? `<p class="credits team-talk"><b>HOW THE BENCH TALKED:</b> ${plural(sum('asks'), 'question')} · ${presses ? `${Math.round(sum('informed') / presses * 100)}% of presses backed by a page` : 'no presses'} · ${sum('guesses')} guess${sum('guesses') === 1 ? '' : 'es'}${sum('linkFlips') ? ` · ${plural(sum('linkFlips'), 'plate')} turned by linked gears` : ''}</p>` : ''; })()}
       <div class="awards">${card('STEADY HANDS', a.steady, 'fewest strikes')}${card('BEST READER', a.reader, 'most pages used')}${card('QUICK EYES', a.quick, 'fastest repair')}</div>
       <div class="bench-card"><div><small>YOUR BENCH</small><b data-r="bench-xp">Counting your work…</b></div><span data-fx-chip></span><button class="btn outline" data-action="share">SHARE RESULT</button></div>
       ${isHost() ? '<button class="btn brass full" data-action="again">PLAY AGAIN ↻</button>' : '<p class="note center">Waiting for the master to start again.</p>'}

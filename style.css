@@ -470,3 +470,29 @@ dialog::backdrop { background: #1a110bd9; }
 /* Example room code under the code box */
 .code-hint { margin: -6px 0 12px; font: 13px/1.5 var(--mono); color: #6f5f4b; }
 .code-hint b { letter-spacing: .14em; color: var(--ink); }
+
+/* Linked gears (clock 2 onward) */
+.link-card { display: grid; grid-template-columns: auto 1fr; gap: 18px; align-items: center; margin: 0 0 18px; padding: 14px 18px; border: 2px dashed var(--brass); background: var(--walnut-dark); }
+.link-card p { font: 15px/1.5 var(--mono); margin: 6px 0 0; }
+.link-card p b { color: var(--brass-light); }
+.link-gears { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font: 700 12px var(--mono); letter-spacing: .08em; }
+.link-gears span { background: var(--linen); color: var(--ink); padding: 6px 8px; }
+.link-gears i { font-style: normal; color: var(--brass-light); font-size: 16px; }
+.link-note { font: 700 12px var(--mono); letter-spacing: .06em; color: #8a6524; border: 1px dashed var(--brass); padding: 4px 8px; }
+.module.flash-turn { animation: turn .7s; }
+@keyframes turn { 30% { box-shadow: 0 0 0 6px var(--brass); transform: rotate(-.6deg); } }
+.feed .f-system.turn { color: #8a6524; font-weight: 700; }
+.brief-feed { margin-top: 16px; }
+.brief-feed .feed { max-height: 180px; }
+
+/* Team debrief */
+.debrief { margin-top: 18px; text-align: left; border-top: 2px solid var(--ink); padding-top: 12px; }
+.breakdown.talk { margin: 8px 0; font-size: 15px; }
+.breakdown.talk th small { display: block; font-size: 12px; color: #8a7a62; }
+.tip { font: 15px/1.5 var(--mono); margin: 10px 0 0; padding: 10px 12px; background: #b8893b22; border-left: 4px solid var(--brass); }
+.team-talk { margin-top: 14px; }
+
+/* Tutorial art for linked gears */
+.mini-link { background: var(--linen); color: var(--ink); padding: 8px 10px; font: 700 13px var(--mono); }
+@media (max-width: 760px) { .link-card { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: reduce) { .module.flash-turn { animation: none; } }
